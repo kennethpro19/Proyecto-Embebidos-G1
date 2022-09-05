@@ -2,6 +2,7 @@ from signal import signal, SIGTERM, SIGHUP, pause
 from rpi_lcd import LCD
 from time import sleep
 from threading import Thread
+import openpyxl
 import pyrebase
 from datetime import datetime,timedelta
 
@@ -28,8 +29,8 @@ db=firebase.database()
 lcd= LCD()
 lectura=True
 opcion=0
-hora_entrada=datetime(2022,7,17,21,50)
-hora_salida=datetime(2022,7,17,21,0)
+hora_entrada=datetime(2022,9,5,11,5)
+hora_salida=datetime(2022,9,5,12,30)
 usu="admin"
 contra="123"
 
@@ -323,31 +324,63 @@ def main():
                         ids=db.child("Tabla Registro").shallow().get().val()
                         ids=list(ids)
                         capa=len(ids)
+                        
+                        
+                        n_estadom=[]
+                        id_usu=0
                         for i in ids:
                             nombres=db.child("Tabla Registro").child(i).child("Nombres").get().val()
-                            num=int(i[-1])
+                            id_split=str(i)
+                            id_split=i.split(":")
+                            num=id_split[1]
+                            num=int(num)
+                            
                             if(usuario==nombres):
-                                if huella.finger.delete_model(num) == huella.adafruit_fingerprint.OK:
-                                    db.child("Tabla Registro").child(i).remove()
-                                    print("USUARIO BORRADO!")
-                                    lcd.clear()
-                                    lcd.text("USUARIO BORRADO!",2)
-                                    sleep(2) 
-                                else:
-                                    lcd.clear()
-                                    lcd.text("FALLO EN BORRAR",2)
-                                    print("FALLO EN BORRAR")
-                                    sleep(2)
+                                materiales=db.child("Tabla Prestamo").child(i).child("Lista Material").shallow().get().val()
+                                materiales=list(materiales)
+                                
+                                for m in materiales:
+                                    estado_m=db.child("Tabla Prestamo").child(i).child("Lista Material").child(m).child("Estado").get().val()
+                                    n_estadom.append(estado_m)
+                                id_usu=num
                             else:
                                 lcd.clear()
                                 lcd.text("POR FAVOR",2)
                                 lcd.text("ESPERE",3)
                                 print("por favor espere")
-                                
-                        i1=db.child("Tabla Registro").shallow().get().val()
-                        i1=list(i1)
                         
-                        if(capa==len(i1)):
+                        n_materiales=len(n_estadom)       
+                        devueltos=n_estadom.count("Devuelto")
+                        
+                        if(devueltos==n_materiales and n_materiales!=0):  
+                            if huella.finger.delete_model(id_usu) == huella.adafruit_fingerprint.OK:
+                                texto=str(id_usu)
+                                i="ID:"+texto
+                                print(i)
+                                db.child("Tabla Registro").child(i).remove()
+                                db.child("Tabla Prestamo").child(i).remove()
+                                db.child("Tabla Reportes").child(i).remove()
+                                fechas=db.child("Tabla Asistencia").shallow().get().val()
+                                fechas=list(fechas)
+                                for a in fechas:
+                                    db.child("Tabla Asistencia").child(a).child(i).remove() 
+                                print("USUARIO BORRADO!")
+                                lcd.clear()
+                                lcd.text("USUARIO BORRADO!",2)
+                                sleep(2) 
+                            else:
+                                lcd.clear()
+                                lcd.text("FALLO EN BORRAR",2)
+                                print("FALLO EN BORRAR")
+                                sleep(2)
+                        if(devueltos<n_materiales and n_materiales!=0):
+                            lcd.clear()
+                            lcd.text("EL USUARIO DEBE",2)
+                            lcd.text("DEVOLVER MATERIAL",3)
+                            print("EL USUARIO DEBE DEVOLVER MATERIAL")
+                            sleep(2)
+                        
+                        if(id_usu==0):
                             lcd.clear()
                             lcd.text("USUARIO NO",2)
                             lcd.text("ENCONTRADO",3)
@@ -374,7 +407,8 @@ def main():
                             asistencias=str(lista_rep.count("Asistio"))
                             atrasos=str(lista_rep.count("Atrasado"))
                             faltas=str(lista_rep.count("No Asistio"))
-                            
+                            nombres=db.child("Tabla Registro").child(i).child("Nombres").get().val()
+                            db.child("Tabla Reportes").child(i).child("Nombres").set(nombres)
                             db.child("Tabla Reportes").child(i).child("Asistencias").set(asistencias)
                             db.child("Tabla Reportes").child(i).child("Atrasos").set(atrasos)
                             db.child("Tabla Reportes").child(i).child("Faltas").set(faltas)
@@ -388,6 +422,25 @@ def main():
                                 faltas=faltas+diferencia
                                 faltas=str(faltas)
                                 db.child("Tabla Reportes").child(i).child("Faltas").set(faltas)
+                        
+                        
+                        
+                        wb=openpyxl.Workbook()
+                        hoja=wb.active
+                        ids=db.child("Tabla Reportes").shallow().get().val()
+                        ids=list(ids)
+                        hoja.append(("Asistencias","Atrasos","Faltas","Nombres"))
+                        for i in ids:
+                            reporteuwu=db.child("Tabla Reportes").child(i).shallow().get().val()
+                            reporteuwu=list(reporteuwu)
+                            data=[]
+                            for u in reporteuwu:
+
+                                datito=db.child("Tabla Reportes").child(i).child(u).get().val()
+                                data.append(datito)
+                            hoja.append(data)
+                            
+                        wb.save("Reportes.xlsx")
                         lcd.clear()
                         lcd.text("REPORTE GENERADO",2)
                         print("REPORTE GENERADO")
